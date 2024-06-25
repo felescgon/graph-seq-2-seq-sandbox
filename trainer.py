@@ -100,55 +100,57 @@ class StepByStep(object):
         # Builds function that performs a step in the train loop
         def perform_train_step_fn(x, y):
             # Sets model to TRAIN mode
-            self.generator.train()
             self.discriminator.train()
-
-
             # Following a basic GAN structure
+            self.discriminator_optimizer.zero_grad()
+
+            #VERSIÓN ORIGINAL
 
             ############################
             # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
             ###########################
-
             # Forward pass real batch through Discriminator
             discriminator_real_yhat = self.discriminator(x)
             # Step 2 - Computes the loss for discriminator
             discriminator_real_loss = self.loss_fn(discriminator_real_yhat, y)
             # Step 3 - Computes gradients for discriminator
             discriminator_real_loss.backward()
-            #D_x = discriminator_real_yhat.mean().item()
+            D_x = discriminator_real_yhat.mean().item()
 
             ## Train with all-fake mini-batch
             # Generate mini-batch of latent vectors
-            noise = torch.randn(x.shape, device=self.device)
+            noise = torch.randn(x.shape[0], 100, 1, device=self.device)
             fake = self.generator(noise)
             fake_labels = torch.as_tensor(np.zeros(y.shape)).float()
             discriminator_fake_yhat = self.discriminator(fake.detach())
             discriminator_fake_loss = self.loss_fn(discriminator_fake_yhat, fake_labels)
             discriminator_fake_loss.backward()
-            #D_G_z1 = discriminator_fake_loss.mean().item()
+            D_G_z1 = discriminator_fake_yhat.mean().item()
             discriminator_loss = discriminator_real_loss + discriminator_fake_loss
+            self.discriminator.eval()
+
+
+
 
             ############################
             # (2) Update G network: maximize log(D(G(z)))
             ###########################
-            self.generator.zero_grad()
-            discriminator_last_yhat = self.discriminator(fake)
-            generator_loss = self.loss_fn(discriminator_last_yhat, y)
-            generator_loss.backward()
-            #D_G_z2 = discriminator_last_yhat.mean().item()
-
+            self.generator.train()
+            for i in range(1):
+                self.generator_optimizer.zero_grad()
+                discriminator_last_yhat = self.discriminator(self.generator(noise))
+                generator_loss = self.loss_fn(discriminator_last_yhat, y)
+                generator_loss.backward()
+                self.generator_optimizer.step()
+            D_G_z2 = discriminator_last_yhat.mean().item()
+            D_G_z2_standard_deviation = discriminator_last_yhat.std().item()
             if callable(self.clipping):
                 self.clipping()
 
 
             # Step 4 - Updates parameters using gradients and the learning rate
-            self.discriminator_optimizer.step()
-            self.generator_optimizer.step()
-            self.discriminator_optimizer.zero_grad()
-            self.discriminator_optimizer.zero_grad()
             # Returns the loss
-            return discriminator_loss.item(), generator_loss.item()
+            return discriminator_loss.item(), generator_loss.item(), D_x, D_G_z1, D_G_z2, D_G_z2_standard_deviation
 
         # Returns the function that will be called inside the train loop
         return perform_train_step_fn
@@ -187,21 +189,33 @@ class StepByStep(object):
         # mini-batch loop we had before
         mini_batch_discriminator_losses = []
         mini_batch_generator_losses = []
+        mini_batch_D_xs = []
+        mini_batch_D_G_z1s = []
+        mini_batch_D_G_z2s = []
+        mini_batch_D_G_z2_standard_deviations = []
 
         for i, (x_batch, y_batch) in enumerate(data_loader):
             x_batch = x_batch.to(self.device)
             y_batch = y_batch.to(self.device)
 
-            mini_batch_discriminator_loss, mini_batch_generator_loss = step_fn(x_batch, y_batch)
+            mini_batch_discriminator_loss, mini_batch_generator_loss, mini_batch_D_x, mini_batch_D_G_z1, mini_batch_D_G_z2, mini_batch_D_G_z2_standard_deviation = step_fn(x_batch, y_batch)
             mini_batch_discriminator_losses.append(mini_batch_discriminator_loss)
             mini_batch_generator_losses.append(mini_batch_generator_loss)
-            
+            mini_batch_D_xs.append(mini_batch_D_x)
+            mini_batch_D_G_z1s.append(mini_batch_D_G_z1)
+            mini_batch_D_G_z2s.append(mini_batch_D_G_z2)
+            mini_batch_D_G_z2_standard_deviations.append(mini_batch_D_G_z2_standard_deviation)
+
             if not validation:
                 self._mini_batch_schedulers(i / n_batches)
 
         discriminator_loss = np.mean(mini_batch_discriminator_losses)
         generator_loss = np.mean(mini_batch_generator_losses)
-        return discriminator_loss, generator_loss
+        D_x = np.mean(mini_batch_D_xs)
+        D_G_z1 = np.mean(mini_batch_D_G_z1s)
+        D_G_z2 = np.mean(mini_batch_D_G_z2s)
+        D_G_z2_standard_deviation = np.mean(mini_batch_D_G_z2_standard_deviations)
+        return discriminator_loss, generator_loss, D_x, D_G_z1, D_G_z2, D_G_z2_standard_deviation
 
     def set_seed(self, seed=42):
         torch.backends.cudnn.deterministic = True
@@ -225,7 +239,7 @@ class StepByStep(object):
 
             # inner loop
             # Performs training using mini-batches
-            discriminator_loss, generator_loss = self._mini_batch(validation=False)
+            discriminator_loss, generator_loss, D_x, D_G_z1, D_G_z2, D_G_z2_standard_deviation = self._mini_batch(validation=False)
             self.discriminator_losses.append(discriminator_loss)
             self.generator_losses.append(generator_loss)
             # VALIDATION
@@ -245,7 +259,7 @@ class StepByStep(object):
                 self.writer.add_scalars(main_tag='loss',
                                         tag_scalar_dict=scalars,
                                         global_step=epoch)
-            print(f'Finished epoch {self.total_epochs}/{n_epochs}. Discriminator loss: {discriminator_loss}. Generator loss: {generator_loss}')
+            print(f'Finished epoch {self.total_epochs}/{n_epochs}. Discriminator loss: {discriminator_loss}. Generator loss: {generator_loss}. D_x: {D_x}. D_G_z1: {D_G_z1}. D_G_z2: {D_G_z2}, D_G_z2_standard_deviation: {D_G_z2_standard_deviation}')
         if self.writer:
             # Closes the writer
             self.writer.close()
@@ -274,12 +288,12 @@ class StepByStep(object):
 
         self.model.train() # always use TRAIN for resuming training   
 
-    def predict(self, batch_size = 10, fixed_noise = None):
+    def predict(self, batch_size, fixed_noise = None):
         # Set is to evaluation mode for predictions
         self.generator.eval()
         self.discriminator.eval()
         if fixed_noise is None:
-            fixed_noise = torch.randn((batch_size, self.generator.sequence_length, self.generator.n_features), device=self.device)
+            fixed_noise = torch.randn(batch_size, 100, 1, device=self.device)
         with torch.no_grad():
             fake_batch = self.generator(fixed_noise).detach().cpu()
             return fake_batch
