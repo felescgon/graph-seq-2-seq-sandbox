@@ -9,6 +9,7 @@ from copy import deepcopy
 from torch.utils.tensorboard import SummaryWriter
 from torchvision.transforms import Normalize
 from torch.optim.lr_scheduler import LambdaLR
+# pylint: disable=E1101
 
 plt.style.use('fivethirtyeight')
 

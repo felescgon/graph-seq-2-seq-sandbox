@@ -1,15 +1,17 @@
+import os
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from helpers import index_splitter
-from helpers import make_balanced_sampler
+from sklearn.preprocessing import StandardScaler
+from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
+
 from data_load import get_alibaba_machine_usage
-from torch.utils.data import DataLoader, Dataset, random_split, TensorDataset
 from Discriminator import Discriminator
 from Generator import Generator
+from helpers import index_splitter, make_balanced_sampler
 from trainer import StepByStep
-from sklearn.preprocessing import StandardScaler
-import numpy as np
+
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -77,16 +79,20 @@ discriminator_optimizer = optim.Adam(discriminator.parameters(), lr=0.0002)
 sbs_rnn = StepByStep(generator, discriminator, loss, generator_optimizer, discriminator_optimizer)
 sbs_rnn.set_loaders(train_loader, test_loader)
 print("antes de entrenamiento")
-sbs_rnn.train(20)
+sbs_rnn.train(10)
 print("después de entrenamiento")
 
 fig = sbs_rnn.plot_losses()
 fig.show()
-# accuracy_matrix = (StepByStep.loader_apply(test_loader, sbs_rnn.correct))
-# print(accuracy_matrix)
-# accuracy = [row[0]/row[1]for row in accuracy_matrix]
-# print(f'Total accuracy: {np.mean(accuracy)*100} %')
+
+#accuracy_matrix = (StepByStep.loader_apply(test_loader, sbs_rnn.correct))
+#print(accuracy_matrix)
+#accuracy = [row[0]/row[1]for row in accuracy_matrix]
+#print(f'Total accuracy: {np.mean(accuracy)*100} %')
+
 noise = torch.randn(batch_size, 1, 1, device='cuda' if torch.cuda.is_available() else 'cpu').permute((0, 2, 1))
 fake_data = sbs_rnn.predict(batch_size)
 fake_data_rescaled = np.reshape(scaler.inverse_transform(fake_data.reshape(-1,1)), fake_data.shape)
+
+os.makedirs('data/alibaba/generated', exist_ok=True)
 np.savetxt(f'data/alibaba/generated/batch_{0}.csv', fake_data_rescaled[0], delimiter=",")
