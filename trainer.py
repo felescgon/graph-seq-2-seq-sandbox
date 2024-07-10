@@ -95,82 +95,64 @@ class StepByStep(object):
         self.writer = SummaryWriter(f'{folder}/{name}_{suffix}')
 
     def _make_train_step_fn(self):
-        # This method does not need ARGS... it can refer to
-        # the attributes: self.model, self.loss_fn and self.optimizer
-        
-        # Builds function that performs a step in the train loop
         def perform_train_step_fn(x, y):
             # Sets model to TRAIN mode
             self.discriminator.train()
-            # Following a basic GAN structure
+            self.generator.train()
+
+            # Update Discriminator
             self.discriminator_optimizer.zero_grad()
 
-            #VERSIÓN ORIGINAL
-
-            ############################
-            # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
-            ###########################
             # Forward pass real batch through Discriminator
+            y = y.view(-1, 1)  # Reshape y to match the discriminator's output
             discriminator_real_yhat = self.discriminator(x)
-            # Step 2 - Computes the loss for discriminator
             discriminator_real_loss = self.loss_fn(discriminator_real_yhat, y)
-            # Step 3 - Computes gradients for discriminator
             discriminator_real_loss.backward()
             D_x = discriminator_real_yhat.mean().item()
 
-            ## Train with all-fake mini-batch
-            # Generate mini-batch of latent vectors
+            # Train with all-fake mini-batch
             noise = torch.randn(x.shape[0], 100, 1, device=self.device)
             fake = self.generator(noise)
-            fake_labels = torch.as_tensor(np.zeros(y.shape)).float()
+            fake_labels = torch.zeros(y.shape, device=self.device)
             discriminator_fake_yhat = self.discriminator(fake.detach())
             discriminator_fake_loss = self.loss_fn(discriminator_fake_yhat, fake_labels)
             discriminator_fake_loss.backward()
             D_G_z1 = discriminator_fake_yhat.mean().item()
             discriminator_loss = discriminator_real_loss + discriminator_fake_loss
-            self.discriminator.eval()
+            self.discriminator_optimizer.step()
 
+            # Update Generator
+            self.generator_optimizer.zero_grad()
+            discriminator_last_yhat = self.discriminator(fake)
+            generator_loss = self.loss_fn(discriminator_last_yhat, torch.ones(y.shape, device=self.device))
+            generator_loss.backward()
+            self.generator_optimizer.step()
 
-
-
-            ############################
-            # (2) Update G network: maximize log(D(G(z)))
-            ###########################
-            self.generator.train()
-            for i in range(1):
-                self.generator_optimizer.zero_grad()
-                discriminator_last_yhat = self.discriminator(self.generator(noise))
-                generator_loss = self.loss_fn(discriminator_last_yhat, y)
-                generator_loss.backward()
-                self.generator_optimizer.step()
             D_G_z2 = discriminator_last_yhat.mean().item()
-            D_G_z2_standard_deviation = discriminator_last_yhat.std().item()
+            #D_G_z2_standard_deviation = discriminator_last_yhat.std().item()
+
             if callable(self.clipping):
                 self.clipping()
 
+            return discriminator_loss.item(), generator_loss.item(), D_x, D_G_z1, D_G_z2#, D_G_z2_standard_deviation
 
-            # Step 4 - Updates parameters using gradients and the learning rate
-            # Returns the loss
-            return discriminator_loss.item(), generator_loss.item(), D_x, D_G_z1, D_G_z2, D_G_z2_standard_deviation
-
-        # Returns the function that will be called inside the train loop
         return perform_train_step_fn
     
     def _make_val_step_fn(self):
-        # Builds function that performs a step in the validation loop
         def perform_val_step_fn(x, y):
             # Sets model to EVAL mode
-            self.model.eval()
+            self.generator.eval()
+            self.discriminator.eval()
 
-            # Step 1 - Computes our model's predicted output - forward pass
-            yhat = self.model(x)
-            # Step 2 - Computes the loss
-            loss = self.loss_fn(yhat, y)
-            # There is no need to compute Steps 3 and 4, since we don't update parameters during evaluation
-            return loss.item()
+            # Forward pass real batch through Discriminator
+            y = y.view(-1, 1)  # Reshape y to match the discriminator's output
+            discriminator_real_yhat = self.discriminator(x)
+            discriminator_real_loss = self.loss_fn(discriminator_real_yhat, y)
+
+            return discriminator_real_loss.item()
 
         return perform_val_step_fn
-            
+    
     def _mini_batch(self, validation=False):
         # The mini-batch can be used with both loaders
         # The argument `validation`defines which loader and 
@@ -193,30 +175,36 @@ class StepByStep(object):
         mini_batch_D_xs = []
         mini_batch_D_G_z1s = []
         mini_batch_D_G_z2s = []
-        mini_batch_D_G_z2_standard_deviations = []
+        #mini_batch_D_G_z2_standard_deviations = []
 
         for i, (x_batch, y_batch) in enumerate(data_loader):
             x_batch = x_batch.to(self.device)
             y_batch = y_batch.to(self.device)
 
-            mini_batch_discriminator_loss, mini_batch_generator_loss, mini_batch_D_x, mini_batch_D_G_z1, mini_batch_D_G_z2, mini_batch_D_G_z2_standard_deviation = step_fn(x_batch, y_batch)
-            mini_batch_discriminator_losses.append(mini_batch_discriminator_loss)
-            mini_batch_generator_losses.append(mini_batch_generator_loss)
-            mini_batch_D_xs.append(mini_batch_D_x)
-            mini_batch_D_G_z1s.append(mini_batch_D_G_z1)
-            mini_batch_D_G_z2s.append(mini_batch_D_G_z2)
-            mini_batch_D_G_z2_standard_deviations.append(mini_batch_D_G_z2_standard_deviation)
+            if validation:
+                mini_batch_discriminator_loss = step_fn(x_batch, y_batch)
+                mini_batch_discriminator_losses.append(mini_batch_discriminator_loss)
+            else:
+                mini_batch_discriminator_loss, mini_batch_generator_loss, mini_batch_D_x, mini_batch_D_G_z1, mini_batch_D_G_z2 = step_fn(x_batch, y_batch)
+                mini_batch_discriminator_losses.append(mini_batch_discriminator_loss)
+                mini_batch_generator_losses.append(mini_batch_generator_loss)
+                mini_batch_D_xs.append(mini_batch_D_x)
+                mini_batch_D_G_z1s.append(mini_batch_D_G_z1)
+                mini_batch_D_G_z2s.append(mini_batch_D_G_z2)
+                #mini_batch_D_G_z2_standard_deviations.append(mini_batch_D_G_z2_standard_deviation)
 
-            if not validation:
                 self._mini_batch_schedulers(i / n_batches)
 
         discriminator_loss = np.mean(mini_batch_discriminator_losses)
-        generator_loss = np.mean(mini_batch_generator_losses)
-        D_x = np.mean(mini_batch_D_xs)
-        D_G_z1 = np.mean(mini_batch_D_G_z1s)
-        D_G_z2 = np.mean(mini_batch_D_G_z2s)
-        D_G_z2_standard_deviation = np.mean(mini_batch_D_G_z2_standard_deviations)
-        return discriminator_loss, generator_loss, D_x, D_G_z1, D_G_z2, D_G_z2_standard_deviation
+        if validation:
+            return discriminator_loss
+        else:
+            generator_loss = np.mean(mini_batch_generator_losses)
+            D_x = np.mean(mini_batch_D_xs)
+            D_G_z1 = np.mean(mini_batch_D_G_z1s)
+            D_G_z2 = np.mean(mini_batch_D_G_z2s)
+            #D_G_z2_standard_deviation = np.mean(mini_batch_D_G_z2_standard_deviations)
+            return discriminator_loss, generator_loss, D_x, D_G_z1, D_G_z2#, D_G_z2_standard_deviation
 
     def set_seed(self, seed=42):
         torch.backends.cudnn.deterministic = True
@@ -240,17 +228,9 @@ class StepByStep(object):
 
             # inner loop
             # Performs training using mini-batches
-            discriminator_loss, generator_loss, D_x, D_G_z1, D_G_z2, D_G_z2_standard_deviation = self._mini_batch(validation=False)
+            discriminator_loss, generator_loss, D_x, D_G_z1, D_G_z2 = self._mini_batch(validation=False)
             self.discriminator_losses.append(discriminator_loss)
             self.generator_losses.append(generator_loss)
-            # VALIDATION
-            # no gradients in validation!
-            # with torch.no_grad():
-            #     # Performs evaluation using mini-batches
-            #     val_loss = self._mini_batch(validation=True)
-            #     self.val_losses.append(val_loss)
-            #
-            # self._epoch_schedulers(val_loss)
                         
             # If a SummaryWriter has been set...
             if self.writer:
@@ -260,7 +240,7 @@ class StepByStep(object):
                 self.writer.add_scalars(main_tag='loss',
                                         tag_scalar_dict=scalars,
                                         global_step=epoch)
-            print(f'Finished epoch {self.total_epochs}/{n_epochs}. Discriminator loss: {discriminator_loss}. Generator loss: {generator_loss}. D_x: {D_x}. D_G_z1: {D_G_z1}. D_G_z2: {D_G_z2}, D_G_z2_standard_deviation: {D_G_z2_standard_deviation}')
+            #print(f'Finished epoch {self.total_epochs}/{n_epochs}. Discriminator loss: {discriminator_loss}. Generator loss: {generator_loss}. D_x: {D_x}. D_G_z1: {D_G_z1}. D_G_z2: {D_G_z2}, D_G_z2_standard_deviation: {D_G_z2_standard_deviation}')
         if self.writer:
             # Closes the writer
             self.writer.close()
@@ -268,10 +248,12 @@ class StepByStep(object):
     def save_checkpoint(self, filename):
         # Builds dictionary with all elements for resuming training
         checkpoint = {'epoch': self.total_epochs,
-                      'model_state_dict': self.model.state_dict(),
-                      'optimizer_state_dict': self.optimizer.state_dict(),
-                      'loss': self.losses,
-                      'val_loss': self.val_losses}
+                      'generator_state_dict': self.generator.state_dict(),
+                      'discriminator_state_dict': self.discriminator.state_dict(),
+                      'generator_optimizer_state_dict': self.generator_optimizer.state_dict(),
+                      'discriminator_optimizer_state_dict': self.discriminator_optimizer.state_dict(),
+                      'generator_losses': self.generator_losses,
+                      'discriminator_losses': self.discriminator_losses}
 
         torch.save(checkpoint, filename)
 
@@ -279,15 +261,18 @@ class StepByStep(object):
         # Loads dictionary
         checkpoint = torch.load(filename)
 
-        # Restore state for model and optimizer
-        self.model.load_state_dict(checkpoint['model_state_dict'])
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        # Restore state for generator, discriminator, and optimizers
+        self.generator.load_state_dict(checkpoint['generator_state_dict'])
+        self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
+        self.generator_optimizer.load_state_dict(checkpoint['generator_optimizer_state_dict'])
+        self.discriminator_optimizer.load_state_dict(checkpoint['discriminator_optimizer_state_dict'])
 
         self.total_epochs = checkpoint['epoch']
-        self.losses = checkpoint['loss']
-        self.val_losses = checkpoint['val_loss']
+        self.generator_losses = checkpoint['generator_losses']
+        self.discriminator_losses = checkpoint['discriminator_losses']
 
-        self.model.train() # always use TRAIN for resuming training   
+        self.generator.train()
+        self.discriminator.train()
 
     def predict(self, batch_size, fixed_noise = None):
         # Set is to evaluation mode for predictions
@@ -314,10 +299,10 @@ class StepByStep(object):
         # Fetches a single mini-batch so we can use add_graph
         if self.train_loader and self.writer:
             x_sample, y_sample = next(iter(self.train_loader))
-            self.writer.add_graph(self.model, x_sample.to(self.device))
+            self.writer.add_graph(self.generator, x_sample.to(self.device))
 
     def count_parameters(self):
-        return sum(p.numel() for p in self.model.parameters() if p.requires_grad)
+        return sum(p.numel() for p in self.generator.parameters() if p.requires_grad)
     
     @staticmethod
     def _visualize_tensors(axs, x, y=None, yhat=None, layer_name='', title=None):
@@ -355,7 +340,7 @@ class StepByStep(object):
     def visualize_filters(self, layer_name, **kwargs):
         try:
             # Gets the layer object from the model
-            layer = self.model
+            layer = self.generator
             for name in layer_name.split('.'):
                 layer = getattr(layer, name)
             # We are only looking at filters for 2D convolutions
@@ -390,9 +375,9 @@ class StepByStep(object):
         # Clear any previous values
         self.visualization = {}
         # Creates the dictionary to map layer objects to their names
-        modules = list(self.model.named_modules())
+        modules = list(self.generator.named_modules())
         layer_names = {layer: name for name, layer in modules[1:]}
-        
+
         if hook_fn is None:
             # Hook function to be attached to the forward pass
             def hook_fn(layer, inputs, outputs):
@@ -459,10 +444,10 @@ class StepByStep(object):
         return fig
 
     def correct(self, x, y, threshold=.5):
-        self.model.eval()
-        yhat = self.model(x.to(self.device))
+        self.discriminator.eval()
+        yhat = self.discriminator(x.to(self.device))
         y = y.to(self.device)
-        self.model.train()
+        self.discriminator.train()
 
         # We get the size of the batch and the number of classes 
         # (only 1, if it is binary)
@@ -478,8 +463,8 @@ class StepByStep(object):
             n_dims += 1
             # In binary classification, we NEED to check if the
             # last layer is a sigmoid (and then it produces probs)
-            if isinstance(self.model, nn.Sequential) and \
-               isinstance(self.model[-1], nn.Sigmoid):
+            if isinstance(self.discriminator, nn.Sequential) and \
+               isinstance(self.discriminator[-1], nn.Sigmoid):
                 predicted = (yhat > threshold).long()
             # or something else (logits), which we need to convert
             # using a sigmoid
@@ -543,14 +528,14 @@ class StepByStep(object):
     def lr_range_test(self, data_loader, end_lr, num_iter=100, step_mode='exp', alpha=0.05, ax=None):
         # Since the test updates both model and optimizer we need to store
         # their initial states to restore them in the end
-        previous_states = {'model': deepcopy(self.model.state_dict()), 
-                           'optimizer': deepcopy(self.optimizer.state_dict())}
+        previous_states = {'model': deepcopy(self.generator.state_dict()), 
+                           'optimizer': deepcopy(self.generator_optimizer.state_dict())}
         # Retrieves the learning rate set in the optimizer
-        start_lr = self.optimizer.state_dict()['param_groups'][0]['lr']
+        start_lr = self.generator_optimizer.state_dict()['param_groups'][0]['lr']
 
         # Builds a custom function and corresponding scheduler
         lr_fn = make_lr_fn(start_lr, end_lr, num_iter)
-        scheduler = LambdaLR(self.optimizer, lr_lambda=lr_fn)
+        scheduler = LambdaLR(self.generator_optimizer, lr_lambda=lr_fn)
 
         # Variables for tracking results and iterations
         tracking = {'loss': [], 'lr': []}
@@ -564,7 +549,7 @@ class StepByStep(object):
                 x_batch = x_batch.to(self.device)
                 y_batch = y_batch.to(self.device)
                 # Step 1
-                yhat = self.model(x_batch)
+                yhat = self.generator(x_batch)
                 # Step 2
                 loss = self.loss_fn(yhat, y_batch)
                 # Step 3
@@ -586,13 +571,13 @@ class StepByStep(object):
                     break
 
                 # Step 4
-                self.optimizer.step()
+                self.generator_optimizer.step()
                 scheduler.step()
-                self.optimizer.zero_grad()
+                self.generator_optimizer.zero_grad()
 
         # Restores the original states
-        self.optimizer.load_state_dict(previous_states['optimizer'])
-        self.model.load_state_dict(previous_states['model'])
+        self.generator_optimizer.load_state_dict(previous_states['optimizer'])
+        self.generator.load_state_dict(previous_states['model'])
 
         if ax is None:
             fig, ax = plt.subplots(1, 1, figsize=(6, 4))
@@ -607,13 +592,13 @@ class StepByStep(object):
         return tracking, fig
     
     def set_optimizer(self, optimizer):
-        self.optimizer = optimizer
+        self.generator_optimizer = optimizer
 
     def capture_gradients(self, layers_to_hook):
         if not isinstance(layers_to_hook, list):
             layers_to_hook = [layers_to_hook]
 
-        modules = list(self.model.named_modules())
+        modules = list(self.generator.named_modules())
         self._gradients = {}
 
         def make_log_fn(name, parm_id):
@@ -622,7 +607,7 @@ class StepByStep(object):
                 return
             return log_fn
 
-        for name, layer in self.model.named_modules():
+        for name, layer in self.generator.named_modules():
             if name in layers_to_hook:
                 self._gradients.update({name: {}})
                 for parm_id, p in layer.named_parameters():
@@ -636,7 +621,7 @@ class StepByStep(object):
         if not isinstance(layers_to_hook, list):
             layers_to_hook = [layers_to_hook]
 
-        modules = list(self.model.named_modules())
+        modules = list(self.generator.named_modules())
         layer_names = {layer: name for name, layer in modules}
 
         self._parameters = {}
@@ -658,7 +643,7 @@ class StepByStep(object):
     def set_lr_scheduler(self, scheduler):
         # Makes sure the scheduler in the argument is assigned to the
         # optimizer we're using in this class
-        if scheduler.optimizer == self.optimizer:
+        if scheduler.optimizer == self.generator_optimizer:
             self.scheduler = scheduler
             if (isinstance(scheduler, optim.lr_scheduler.CyclicLR) or
                 isinstance(scheduler, optim.lr_scheduler.OneCycleLR) or
@@ -690,15 +675,15 @@ class StepByStep(object):
                 self.learning_rates.append(current_lr)
 
     def set_clip_grad_value(self, clip_value):
-        self.clipping = lambda: nn.utils.clip_grad_value_(self.model.parameters(), clip_value=clip_value)
+        self.clipping = lambda: nn.utils.clip_grad_value_(self.generator.parameters(), clip_value=clip_value)
 
     def set_clip_grad_norm(self, max_norm, norm_type=2):
-        self.clipping = lambda: nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=max_norm, norm_type=norm_type)
+        self.clipping = lambda: nn.utils.clip_grad_norm_(self.generator.parameters(), max_norm=max_norm, norm_type=norm_type)
 
     def set_clip_backprop(self, clip_value):
         if self.clipping is None:
             self.clipping = []
-        for p in self.model.parameters():
+        for p in self.generator.parameters():
             if p.requires_grad:
                 func = lambda grad: torch.clamp(grad, -clip_value, clip_value)
                 handle = p.register_hook(func)
