@@ -6,7 +6,7 @@ import torch.optim as optim
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
 
-from data_load import get_alibaba_machine_usage
+from data_load import get_alibaba_encoded_machine_usage
 from Discriminator import Discriminator
 from Generator import Generator
 from helpers import index_splitter, make_balanced_sampler
@@ -23,7 +23,7 @@ def weights_init(m):
 
 seq_len = 64 # No se puede cambiar sin cambiar la estructura convolucional del generador
 batch_size = 128
-x, y = get_alibaba_machine_usage(5120, seq_len)
+x, y, autoencoder = get_alibaba_encoded_machine_usage(5120, seq_len)
 train_idx, val_idx = index_splitter(len(x), [80,20])
 
 x_tensor = torch.as_tensor(x)
@@ -58,12 +58,12 @@ test_dataset = TensorDataset(scaled_x_val_tensor.float(), y_val_tensor.view(-1, 
 train_loader = DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
 test_loader = DataLoader(dataset=test_dataset, batch_size=batch_size)
 
-num_layers = 3
+num_layers = 2
 rnn_layer = nn.LSTM
 bidirectional = False
 n_discriminator_outputs = 1
 n_features = x_train_tensor.shape[2]
-hidden_dim_discriminator = 32
+hidden_dim_discriminator = 16
 
 batch_norm = True
 dropout = 0.2
@@ -74,8 +74,8 @@ generator.apply(weights_init)
 discriminator = Discriminator(n_features=n_features, hidden_dim=hidden_dim_discriminator, n_outputs=n_discriminator_outputs, num_layers=num_layers, bidirectional=bidirectional, rnn_layer=rnn_layer, batch_norm=batch_norm, dropout=dropout)
 loss = nn.BCELoss()
 
-generator_lr = 0.0002
-discriminator_lr = 0.0002
+generator_lr = 0.0001
+discriminator_lr = 0.0001
 
 generator_optimizer = optim.Adam(generator.parameters(), lr=generator_lr)
 discriminator_optimizer = optim.Adam(discriminator.parameters(), lr=discriminator_lr)
@@ -83,7 +83,7 @@ discriminator_optimizer = optim.Adam(discriminator.parameters(), lr=discriminato
 sbs_rnn = StepByStep(generator, discriminator, loss, generator_optimizer, discriminator_optimizer)
 sbs_rnn.set_loaders(train_loader, test_loader)
 print("antes de entrenamiento")
-sbs_rnn.train(100)
+sbs_rnn.train(3)
 print("después de entrenamiento")
 
 fig = sbs_rnn.plot_losses()

@@ -32,5 +32,6 @@ class Generator(nn.Module):
     def forward(self, X):
         #N, 1, 1
         out = self.main(X).permute(0, 2, 1)
+
         return out
         #return self.linear(out)
