@@ -25,11 +25,11 @@ def weights_init(m):
         nn.init.constant_(m.bias.data, 0)
 
 # Hyperparameter ranges
-ngf_values = [32, 64, 128]
-hidden_dim_values = [16, 32, 64, 128]
-lr_values = [0.0001, 0.0005, 0.001]
-num_layers_values = [2, 3, 4, 5]
-dropout_values = [0.0, 0.2, 0.5]
+ngf_values = [128]
+hidden_dim_values = [256]
+lr_values = [0.0005]
+num_layers_values = [5]
+dropout_values = [0.2]
 num_epochs = 10
 batch_size = 128
 

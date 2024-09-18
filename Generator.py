@@ -27,11 +27,11 @@ class Generator(nn.Module):
             nn.ReLU(True),
             # state size. (ngf) x 32 x 32
             nn.ConvTranspose1d(ngf, n_features, 4, 2, 1, bias=False),
-            nn.Tanh()
+            #nn.Tanh() original
+            nn.ReLU()
         )
     def forward(self, X):
         #N, 1, 1
         out = self.main(X).permute(0, 2, 1)
-
         return out
         #return self.linear(out)

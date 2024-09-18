@@ -43,7 +43,7 @@ def get_alibaba_encoded_machine_usage(n_samples, sequence_length):
 def autoencoder_encode(original_df):
     np.random.seed(42)
 
-    features = original_df.drop(columns=['instance_num', 'start_time', 'end_time', 'plan_cpu', 'plan_mem', 'main_task'])
+    features = original_df.drop(columns=['instance_num', 'start_time', 'end_time'])
 
     # Convert data to PyTorch tensors
     features_tensor = torch.tensor(features.values, dtype=torch.float32)
@@ -57,7 +57,7 @@ def autoencoder_encode(original_df):
     # Training the autoencoder
     criterion = nn.MSELoss()
     optimizer = optim.Adam(autoencoder.parameters(), lr=0.001)
-    num_epochs = 100
+    num_epochs = 5
 
     for _ in range(num_epochs):
         for data in dataloader:
@@ -74,6 +74,6 @@ def autoencoder_encode(original_df):
     # Reconstruct the original DataFrame with decoded features
     encoded_columns = [f'encoded_dim_{i+1}' for i in range(encoding_dim)]
     encoded_data = pd.DataFrame(encoded_data, columns=encoded_columns)
-    final_df = pd.concat([original_df[['instance_num', 'start_time', 'end_time', 'plan_cpu', 'plan_mem', 'main_task']], encoded_data], axis=1)
+    final_df = pd.concat([original_df[['instance_num', 'start_time', 'end_time']], encoded_data], axis=1)
 
     return final_df, autoencoder

@@ -5,7 +5,6 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, Dataset, TensorDataset, random_split
-
 from data_load import get_alibaba_encoded_machine_usage
 from Discriminator import Discriminator
 from Generator import Generator
@@ -83,7 +82,7 @@ discriminator_optimizer = optim.Adam(discriminator.parameters(), lr=discriminato
 sbs_rnn = StepByStep(generator, discriminator, loss, generator_optimizer, discriminator_optimizer)
 sbs_rnn.set_loaders(train_loader, test_loader)
 print("antes de entrenamiento")
-sbs_rnn.train(3)
+sbs_rnn.train(2)
 print("después de entrenamiento")
 
 fig = sbs_rnn.plot_losses()
@@ -96,6 +95,12 @@ fig.show()
 
 noise = torch.randn(batch_size, 1, 1, device='cuda' if torch.cuda.is_available() else 'cpu').permute((0, 2, 1))
 fake_data = sbs_rnn.predict(batch_size)
+fake_data = fake_data.detach().cpu().numpy()
+np.savetxt('data/alibaba/generated/fake_data.csv', fake_data.reshape(-1,1), delimiter=",")
+
+# Print raw generator output
+print("Raw Generator Output: ", fake_data)
+
 fake_data_rescaled = np.reshape(scaler.inverse_transform(fake_data.reshape(-1,1)), fake_data.shape)
 
 os.makedirs('data/alibaba/generated', exist_ok=True)
