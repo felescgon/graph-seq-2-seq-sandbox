@@ -30,6 +30,7 @@ X_rama_2_scaled = scaler_rama_2.fit_transform(X_rama_2[['start_time', 'end_time'
 
 X_rama_3 = original_df[task_type_columns + task_category_columns + job_columns]
 
+# TODO: Añadir encoder decoder para el resto de features
 class EncoderDecoder(nn.Module):
     def __init__(self, input_dim, encoding_dim):
         super(EncoderDecoder, self).__init__()
@@ -84,7 +85,6 @@ for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
 
     tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {epoch_train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
 
-# Plot training and validation loss
 plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
 plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
 plt.title('Autoencoder Training and Validation Loss')
@@ -163,35 +163,29 @@ X_test_rama_2_tensor = torch.FloatTensor(X_test_rama_2)
 X_test_rama_3_tensor = torch.FloatTensor(X_test_rama_3)
 y_test_tensor = torch.FloatTensor(y_test)
 
-# Lists to store loss values
 train_losses = []
 val_losses = []
 
-# Training loop with tqdm
-num_epochs = 100  # Define number of epochs
+num_epochs = 100
 for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
-    model.train()  # Set the model to training mode
-    optimizer.zero_grad()  # Clear previous gradients
+    model.train()
+    optimizer.zero_grad()
 
-    # Forward pass
     outputs = model(X_train_rama_1_tensor, X_train_rama_2_tensor, X_train_rama_3_tensor)
-    loss = criterion(outputs, y_train_tensor)  # Calculate loss
+    loss = criterion(outputs, y_train_tensor)
 
-    # Backward pass
     loss.backward()
-    optimizer.step()  # Update weights
+    optimizer.step()
 
-    # Log training loss
-    train_loss = loss.item()  # Get the loss value
-    train_losses.append(train_loss)  # Append to the training losses list
+    train_loss = loss.item()
+    train_losses.append(train_loss)
 
-    # Validate the model
-    model.eval()  # Set the model to evaluation mode
-    with torch.no_grad():  # Disable gradient calculation for validation
+    model.eval()
+    with torch.no_grad():
         val_outputs = model(X_test_rama_1_tensor, X_test_rama_2_tensor, X_test_rama_3_tensor)
-        val_loss = criterion(val_outputs, y_test_tensor)  # Calculate validation loss
+        val_loss = criterion(val_outputs, y_test_tensor)
 
-    val_losses.append(val_loss.item())  # Append to the validation losses list
+    val_losses.append(val_loss.item())
     tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
 
 
@@ -212,14 +206,13 @@ print(f"Loss on the test set: {loss.item()}")
 mse = mean_squared_error(y_test, predictions.numpy())
 print(f"Mean squared error on the testing set: {mse}")
 
-# Plotting the training and validation loss
 plt.figure(figsize=(10, 5))
 plt.plot(range(1, num_epochs + 1), train_losses, label='Training Loss', marker='o')
 plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss', marker='o')
 plt.title('Training and Validation Loss over Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
-plt.xticks(range(1, num_epochs + 1))  # Set x-ticks to be the epoch numbers
+plt.xticks(range(1, num_epochs + 1))
 plt.legend()
 plt.grid()
 plt.show()
