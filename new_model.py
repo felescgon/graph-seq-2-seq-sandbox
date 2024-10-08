@@ -7,6 +7,7 @@ import torch.optim as optim
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 file_path = os.path.abspath('../graph-seq2seq/data/alibaba/batch_task_chunk_preprocessed_10000.csv')
@@ -52,7 +53,7 @@ optimizer = optim.Adam(encoder_decoder_rama_3.parameters(), lr=0.001)
 
 X_rama_3_tensor = torch.FloatTensor(X_rama_3.values)
 
-num_epochs = 15
+num_epochs = 50
 batch_size = 32
 num_batches = len(X_rama_3_tensor) // batch_size
 
@@ -60,7 +61,7 @@ train_losses = []
 val_losses = []
 
 
-for epoch in range(num_epochs):
+for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
     encoder_decoder_rama_3.train()
     epoch_train_loss = 0
     for i in range(num_batches):
@@ -81,16 +82,16 @@ for epoch in range(num_epochs):
         val_loss = criterion(val_outputs, X_rama_3_tensor)
         val_losses.append(val_loss.item())
 
-    print(f"Epoch {epoch+1}/{num_epochs}, Train Loss: {epoch_train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
+    tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {epoch_train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
 
 # Plot training and validation loss
-# plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
-# plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
-# plt.title('Autoencoder Training and Validation Loss')
-# plt.xlabel('Epochs')
-# plt.ylabel('Loss')
-# plt.legend()
-# plt.show()
+plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
+plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
+plt.title('Autoencoder Training and Validation Loss')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+plt.show()
 
 
 with torch.no_grad():
@@ -157,14 +158,41 @@ X_train_rama_2_tensor = torch.FloatTensor(X_train_rama_2)
 X_train_rama_3_tensor = torch.FloatTensor(X_train_rama_3)
 y_train_tensor = torch.FloatTensor(y_train)
 
-for epoch in range(2):
-    print(f"Epoch {epoch+1}/2")
-    model.train()
-    optimizer.zero_grad()
+X_test_rama_1_tensor = torch.FloatTensor(X_test_rama_1)
+X_test_rama_2_tensor = torch.FloatTensor(X_test_rama_2)
+X_test_rama_3_tensor = torch.FloatTensor(X_test_rama_3)
+y_test_tensor = torch.FloatTensor(y_test)
+
+# Lists to store loss values
+train_losses = []
+val_losses = []
+
+# Training loop with tqdm
+num_epochs = 100  # Define number of epochs
+for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
+    model.train()  # Set the model to training mode
+    optimizer.zero_grad()  # Clear previous gradients
+
+    # Forward pass
     outputs = model(X_train_rama_1_tensor, X_train_rama_2_tensor, X_train_rama_3_tensor)
-    loss = criterion(outputs, y_train_tensor)
+    loss = criterion(outputs, y_train_tensor)  # Calculate loss
+
+    # Backward pass
     loss.backward()
-    optimizer.step()
+    optimizer.step()  # Update weights
+
+    # Log training loss
+    train_loss = loss.item()  # Get the loss value
+    train_losses.append(train_loss)  # Append to the training losses list
+
+    # Validate the model
+    model.eval()  # Set the model to evaluation mode
+    with torch.no_grad():  # Disable gradient calculation for validation
+        val_outputs = model(X_test_rama_1_tensor, X_test_rama_2_tensor, X_test_rama_3_tensor)
+        val_loss = criterion(val_outputs, y_test_tensor)  # Calculate validation loss
+
+    val_losses.append(val_loss.item())  # Append to the validation losses list
+    tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
 
 
 model.eval()
@@ -172,6 +200,8 @@ X_test_rama_1_tensor = torch.FloatTensor(X_test_rama_1)
 X_test_rama_2_tensor = torch.FloatTensor(X_test_rama_2)
 X_test_rama_3_tensor = torch.FloatTensor(X_test_rama_3)
 y_test_tensor = torch.FloatTensor(y_test)
+
+
 
 with torch.no_grad():
     predictions = model(X_test_rama_1_tensor, X_test_rama_2_tensor, X_test_rama_3_tensor)
@@ -181,6 +211,18 @@ print(f"Loss on the test set: {loss.item()}")
 
 mse = mean_squared_error(y_test, predictions.numpy())
 print(f"Mean squared error on the testing set: {mse}")
+
+# Plotting the training and validation loss
+plt.figure(figsize=(10, 5))
+plt.plot(range(1, num_epochs + 1), train_losses, label='Training Loss', marker='o')
+plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss', marker='o')
+plt.title('Training and Validation Loss over Epochs')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.xticks(range(1, num_epochs + 1))  # Set x-ticks to be the epoch numbers
+plt.legend()
+plt.grid()
+plt.show()
 
 predictions_numerical_1 = predictions[:, :X_rama_1_scaled.shape[1]]
 predictions_numerical_2 = predictions[:, X_rama_1_scaled.shape[1]:X_rama_1_scaled.shape[1] + X_rama_2_scaled.shape[1]]
