@@ -20,9 +20,11 @@ task_type_columns = [col for col in original_df.columns if 'task_type' in col]
 task_category_columns = [col for col in original_df.columns if 'task_category' in col]
 job_columns = [col for col in original_df.columns if 'job_' in col]
 
-X_rama_1 = original_df[['instance_num'] + plan_cpu_columns + plan_mem_columns]
+X_rama_1_first_half = original_df[['instance_num']]
 scaler_rama_1 = StandardScaler()
-X_rama_1_scaled = scaler_rama_1.fit_transform(X_rama_1)
+X_rama_1_first_half_scaled = scaler_rama_1.fit_transform(X_rama_1)
+
+X_rama_1_second_half = original_df[plan_cpu_columns + plan_mem_columns]
 
 X_rama_2 = original_df[['start_time', 'end_time', 'duration']]
 scaler_rama_2 = StandardScaler()
@@ -60,7 +62,6 @@ num_batches = len(X_rama_3_tensor) // batch_size
 
 train_losses = []
 val_losses = []
-
 
 for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
     encoder_decoder_rama_3.train()
