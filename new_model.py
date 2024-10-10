@@ -164,16 +164,12 @@ class LSTMModel(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(input_dim_rama_1 + input_dim_rama_2 + input_dim_rama_3, 512),
             nn.ReLU(),
-            nn.BatchNorm1d(512),
-            nn.Dropout(0.1)
+            nn.BatchNorm1d(512)
         )
 
-        self.lstm = nn.LSTM(512, 128, num_layers=1, dropout=0.1)
-
-        self.output_layer = nn.Sequential(
-            nn.Linear(128, output_size),
-            nn.Dropout(0.1)
-        )
+        self.lstm = nn.LSTM(512, 256, batch_first=True)
+        self.batch_norm = nn.BatchNorm1d(256)
+        self.output_layer = nn.Linear(256, output_size)
 
 
     def forward(self, rama_1, rama_2, rama_3):
