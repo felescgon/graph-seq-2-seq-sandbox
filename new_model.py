@@ -6,7 +6,7 @@ import torch.nn as nn
 import torch.optim as optim
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import root_mean_squared_error
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
@@ -85,13 +85,13 @@ for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
 
     tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {epoch_train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
 
-plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
-plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
-plt.title('Autoencoder Training and Validation Loss')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.legend()
-plt.show()
+# plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
+# plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
+# plt.title('Autoencoder Training and Validation Loss')
+# plt.xlabel('Epochs')
+# plt.ylabel('Loss')
+# plt.legend()
+# plt.show()
 
 with torch.no_grad():
     X_rama_1_second_half_encoded = encoder_decoder_rama_1.encoder(X_rama_1_second_half_tensor)
@@ -132,13 +132,13 @@ for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
 
     tqdm.write(f"Epoch {epoch+1}/{num_epochs}, Training Loss: {epoch_train_loss:.4f}, Validation Loss: {val_loss.item():.4f}")
 
-plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
-plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
-plt.title('Autoencoder Training and Validation Loss')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.legend()
-plt.show()
+# plt.plot(range(1, num_epochs + 1), train_losses, label='Train Loss')
+# plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
+# plt.title('Autoencoder Training and Validation Loss')
+# plt.xlabel('Epochs')
+# plt.ylabel('Loss')
+# plt.legend()
+# plt.show()
 
 with torch.no_grad():
     X_rama_3_encoded = encoder_decoder_rama_3.encoder(X_rama_3_tensor)
@@ -161,40 +161,25 @@ X_train_rama_1, X_test_rama_1, X_train_rama_2, X_test_rama_2, X_train_rama_3, X_
 class LSTMModel(nn.Module):
     def __init__(self, input_dim_rama_1, input_dim_rama_2, input_dim_rama_3, output_size):
         super(LSTMModel, self).__init__()
-        self.dense_rama_1 = nn.Sequential(
-            nn.Linear(input_dim_rama_1, 2048),
+        self.mlp = nn.Sequential(
+            nn.Linear(input_dim_rama_1 + input_dim_rama_2 + input_dim_rama_3, 512),
             nn.ReLU(),
-            nn.Linear(2048, 1024),
-            nn.ReLU()
+            nn.BatchNorm1d(512)
         )
-        
-        self.dense_rama_2 = nn.Sequential(
-            nn.Linear(input_dim_rama_2, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, 1024),
-            nn.ReLU()
-        )
-        
-        self.dense_rama_3 = nn.Sequential(
-            nn.Linear(input_dim_rama_3, 2048),
-            nn.ReLU(),
-            nn.Linear(2048, 1024),
-            nn.ReLU()
-        )
-        
-        self.lstm = nn.LSTM(3072, 512)
-        self.output_layer = nn.Linear(512, output_size)
+
+        self.lstm = nn.LSTM(512, 256, batch_first=True)
+        self.batch_norm = nn.BatchNorm1d(256)
+        self.output_layer = nn.Linear(256, output_size)
+
 
     def forward(self, rama_1, rama_2, rama_3):
-        dense_out_1 = self.dense_rama_1(rama_1).unsqueeze(1)
-        dense_out_2 = self.dense_rama_2(rama_2).unsqueeze(1)
-        dense_out_3 = self.dense_rama_3(rama_3).unsqueeze(1)
-        
-        combined = torch.cat([dense_out_1, dense_out_2, dense_out_3], dim=1)
+        combined = torch.cat([rama_1, rama_2, rama_3], dim=1)
+        combined = self.mlp(combined)
 
         lstm_out, _ = self.lstm(combined)
-        
-        return self.output_layer(lstm_out[:, -1, :])
+        output = self.output_layer(lstm_out.view(lstm_out.shape[0], -1))
+
+        return output
 
 input_size_rama_1 = X_rama_1_scaled_encoded.shape[1]
 input_size_rama_2 = X_rama_2_scaled.shape[1]
@@ -218,7 +203,7 @@ y_test_tensor = torch.FloatTensor(y_test)
 train_losses = []
 val_losses = []
 
-num_epochs = 2
+num_epochs = 1000
 for epoch in tqdm(range(num_epochs), desc="Training Epochs", unit="epoch"):
     model.train()
     optimizer.zero_grad()
@@ -247,26 +232,23 @@ X_test_rama_2_tensor = torch.FloatTensor(X_test_rama_2)
 X_test_rama_3_tensor = torch.FloatTensor(X_test_rama_3)
 y_test_tensor = torch.FloatTensor(y_test)
 
-
-
 with torch.no_grad():
     predictions = model(X_test_rama_1_tensor, X_test_rama_2_tensor, X_test_rama_3_tensor)
 
 loss = criterion(predictions, y_test_tensor)
 print(f"Loss on the test set: {loss.item()}")
 
-mse = mean_squared_error(y_test, predictions.numpy())
-print(f"Mean squared error on the testing set: {mse}")
+rmse = root_mean_squared_error(y_test, predictions.numpy())
+print(f"Root mean squared error on the testing set: {rmse}")
 
 plt.figure(figsize=(10, 5))
-plt.plot(range(1, num_epochs + 1), train_losses, label='Training Loss', marker='o')
-plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss', marker='o')
+plt.plot(range(1, num_epochs + 1), train_losses, label='Training Loss')
+plt.plot(range(1, num_epochs + 1), val_losses, label='Validation Loss')
 plt.title('Training and Validation Loss over Epochs')
 plt.xlabel('Epochs')
 plt.ylabel('Loss')
-plt.xticks(range(1, num_epochs + 1))
+plt.xticks(np.arange(1, num_epochs + 1, 50))
 plt.legend()
-plt.grid()
 plt.show()
 
 predictions_numerical_1 = predictions[:, :X_rama_1_scaled_encoded.shape[1]]
